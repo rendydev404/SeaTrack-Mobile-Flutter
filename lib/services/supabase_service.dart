@@ -1,15 +1,13 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter/foundation.dart';
 import '../models/transaction.dart';
 
 class SupabaseService {
-  // TODO: Replace with actual Supabase URL and Anon Key
-  static const String supabaseUrl = 'YOUR_SUPABASE_URL';
-  static const String supabaseAnonKey = 'YOUR_SUPABASE_ANON_KEY';
-
   static Future<void> initialize() async {
     await Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
+      url: dotenv.env['SUPABASE_URL'] ?? '',
+      anonKey: dotenv.env['SUPABASE_ANON_KEY'] ?? '',
     );
   }
 
@@ -17,9 +15,9 @@ class SupabaseService {
     try {
       final supabase = Supabase.instance.client;
       await supabase.from('transactions').insert(transaction.toMap());
-      print('Transaction synced to Supabase successfully.');
+      debugPrint('Transaction synced to Supabase successfully.');
     } catch (e) {
-      print('Error syncing to Supabase: $e');
+      debugPrint('Error syncing to Supabase: $e');
     }
   }
 }

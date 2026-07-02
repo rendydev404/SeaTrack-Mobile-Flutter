@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
-import 'package:android_power_manager/android_power_manager.dart';
-
 class AppStateProvider extends ChangeNotifier {
   bool isNotificationAccessGranted = false;
   bool isBatteryOptimizationIgnored = false;
@@ -13,20 +11,11 @@ class AppStateProvider extends ChangeNotifier {
 
   Future<void> checkPermissions() async {
     isNotificationAccessGranted = await NotificationListenerService.isPermissionGranted();
-    
-    final isIgnored = await AndroidPowerManager.isIgnoringBatteryOptimizations;
-    isBatteryOptimizationIgnored = isIgnored ?? false;
-    
     notifyListeners();
   }
 
   Future<void> requestNotificationAccess() async {
     await NotificationListenerService.requestPermission();
-    await checkPermissions();
-  }
-
-  Future<void> requestBatteryOptimizationBypass() async {
-    await AndroidPowerManager.requestIgnoreBatteryOptimizations();
     await checkPermissions();
   }
 

@@ -24,12 +24,6 @@ class HomeScreen extends StatelessWidget {
                   provider.isNotificationAccessGranted,
                   provider.requestNotificationAccess,
                 ),
-                const SizedBox(height: 16),
-                _buildStatusIndicator(
-                  'Battery Optimization Bypass',
-                  provider.isBatteryOptimizationIgnored,
-                  provider.requestBatteryOptimizationBypass,
-                ),
                 const SizedBox(height: 24),
                 const Text(
                   'Log Monitor',

@@ -8,8 +8,8 @@ class NotificationService {
       return; // Ignore notifications from other apps
     }
 
-    final title = event.title ?? '';
-    final content = event.content ?? '';
+    final title = event.title;
+    final content = event.content;
     final text = '$title $content'.toLowerCase();
     
     onLog('Received SeaBank Notification: $content');
