@@ -55,7 +55,11 @@ class _SeaTrackAppState extends State<SeaTrackApp> {
     return MaterialApp(
       title: 'SeaTrack',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.orange),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.indigo,
+          primary: Colors.indigo,
+          secondary: Colors.deepPurple,
+        ),
         useMaterial3: true,
       ),
       home: const HomeScreen(),
