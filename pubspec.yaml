@@ -12,8 +12,7 @@ dependencies:
   flutter:
     sdk: flutter
   supabase_flutter: ^2.5.0
-  notification_listener_service: ^2.0.0
-  android_power_manager: ^0.1.2
+  notification_listener_service: any
   provider: ^6.1.2
 
 dev_dependencies:
