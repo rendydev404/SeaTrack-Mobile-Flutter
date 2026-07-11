@@ -4,7 +4,7 @@ import '../models/transaction.dart';
 import '../repositories/transaction_repository.dart';
 import 'dart:async';
 
-class AppStateProvider extends ChangeNotifier {
+class AppStateProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool isNotificationAccessGranted = false;
   List<String> logs = [];
   
@@ -15,19 +15,36 @@ class AppStateProvider extends ChangeNotifier {
 
   final TransactionRepository _repository = TransactionRepository();
   Timer? _pollingTimer;
+  StreamSubscription? _realtimeSubscription;
 
   AppStateProvider() {
+    WidgetsBinding.instance.addObserver(this);
     checkPermissions();
     _initRealtimeTransactions();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Force refresh when app comes back to foreground
+      fetchTransactions();
+    }
+  }
+
   void _initRealtimeTransactions() {
-    // Fetch immediately
+    // 1. Fetch immediately
     fetchTransactions();
     
-    // Fallback polling for 100% realtime without requiring user to enable Realtime in Supabase Dashboard
+    // 2. Fallback polling
     _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       fetchTransactions();
+    });
+
+    // 3. True Supabase Realtime Stream (if replication is enabled)
+    _realtimeSubscription = _repository.getTransactionsStream().listen((data) {
+      transactions = data;
+      _calculateTotals();
+      notifyListeners();
     });
   }
 
@@ -88,7 +105,9 @@ class AppStateProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollingTimer?.cancel();
+    _realtimeSubscription?.cancel();
     super.dispose();
   }
 }
