@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
 import 'package:notification_listener_service/notification_event.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../providers/app_state_provider.dart';
 import '../models/transaction.dart';
 import '../services/notification_service.dart';
+import '../services/local_notification_service.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -426,32 +428,20 @@ class HomeScreen extends StatelessWidget {
   }
 
   void _simulateNotification(BuildContext context, bool isIncome) async {
-    final event = ServiceNotificationEvent(
-      id: 0,
-      title: 'SeaBank',
-      canReply: false,
-      haveExtraPicture: false,
-      hasRemoved: false,
-      packageName: 'test.simulation',
-      content: isIncome ? 'Dana masuk sebesar Rp 50.000' : 'Pembayaran QRIS sebesar Rp 25.000',
-      onGoing: false,
-      timestamp: DateTime.now().millisecondsSinceEpoch,
-      appIcon: null,
-      extrasPicture: null,
-      largeIcon: null,
+    final title = 'SeaBank';
+    final body = isIncome 
+        ? 'Dana masuk sebesar Rp 50.000 dari Seseorang'
+        : 'Pembayaran QRIS sebesar Rp 25.000 berhasil';
+        
+    await LocalNotificationService.showNotification(
+      id: isIncome ? 1 : 2,
+      title: title,
+      body: body,
     );
-    
-    final provider = Provider.of<AppStateProvider>(context, listen: false);
-    final success = await NotificationService.processNotification(event, (logMsg) {
-      provider.addLog(logMsg);
-    });
-    if (success) {
-      provider.fetchTransactions();
-    }
     
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isIncome ? 'Simulated Income!' : 'Simulated Expense!')),
+        SnackBar(content: Text(isIncome ? 'Sent Real Income Notif!' : 'Sent Real Expense Notif!')),
       );
     }
   }

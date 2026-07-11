@@ -5,41 +5,63 @@ import '../repositories/transaction_repository.dart';
 class NotificationService {
   static final TransactionRepository _repository = TransactionRepository();
 
-  static Future<bool> processNotification(ServiceNotificationEvent event, Function(String) onLog) async {
-    final pkg = event.packageName ?? '';
-    
-    // Log all notifications for debugging
-    onLog('DEBUG: pkg=$pkg, title=${event.title}');
-    
-    if (pkg != 'id.co.bankbkemobile.digitalbank' && pkg != 'test.simulation') {
-      return false; // Ignore non-seabank apps
-    }
+  static Future<bool> processNotification(
+    ServiceNotificationEvent event, 
+    Function(String) onLog,
+    List<TransactionModel> existingTransactions,
+  ) async {
+    try {
+      final pkg = event.packageName ?? '';
+      
+      // Log all notifications for debugging
+      onLog('DEBUG: pkg=$pkg, title=${event.title}');
+      
+      if (pkg != 'id.co.bankbkemobile.digitalbank' && pkg != 'id.dana' && pkg != 'test.simulation') {
+        return false; // Ignore non-seabank/dana apps
+      }
 
-    final title = event.title ?? '';
-    final content = event.content ?? '';
-    final text = '$title $content'.toLowerCase();
-    
-    onLog('Received Notification: $content');
+      final title = event.title ?? '';
+      final content = event.content ?? '';
+      final text = '$title $content'.toLowerCase();
+      
+      onLog('Received Notification: $content');
 
-    TransactionModel? transaction = _parseNotification(text, content, title);
+      TransactionModel? transaction = _parseNotification(text, content, title, pkg, event.timestamp);
 
-    if (transaction != null) {
-      onLog('Parsed: ${transaction.type} - Rp ${transaction.amount}');
-      try {
+      if (transaction != null) {
+        // Deduplication check: if a transaction with the same exact timestamp already exists, ignore.
+        bool isDuplicate = existingTransactions.any((tx) => 
+          tx.createdAt != null && 
+          tx.createdAt!.millisecondsSinceEpoch == event.timestamp
+        );
+        
+        if (isDuplicate) {
+          onLog('Ignored duplicate notification from ${transaction.title}');
+          return false;
+        }
+
+        onLog('Parsed: ${transaction.type} - Rp ${transaction.amount}');
+        
         await _repository.insertTransaction(transaction);
         onLog('Successfully inserted to Supabase');
         return true;
-      } catch (e) {
-        onLog('Supabase Error (Check RLS): $e');
+      } else {
+        onLog('Failed to parse or not a transaction notification.');
         return false;
       }
-    } else {
-      onLog('Failed to parse or not a transaction notification.');
+    } catch (e) {
+      onLog('Error processing notification: $e');
       return false;
     }
   }
 
-  static TransactionModel? _parseNotification(String lowerText, String originalText, String title) {
+  static TransactionModel? _parseNotification(
+      String lowerText, 
+      String originalText, 
+      String title, 
+      String pkg,
+      int timestamp) {
+    
     final lowerTitle = title.toLowerCase();
     
     // Determine type by title first, then fallback to content
@@ -48,16 +70,19 @@ class NotificationService {
                     lowerText.contains('masuk') || 
                     lowerText.contains('dikreditkan') ||
                     lowerText.contains('terima dana') ||
+                    lowerText.contains('berhasil top up') ||
                     lowerText.contains('dari ');
                     
     bool isExpense = lowerTitle.contains('keluar') || 
                      lowerTitle.contains('bayar') ||
                      lowerTitle.contains('pembayaran') ||
+                     lowerText.contains('berhasil kirim uang') ||
                      lowerText.contains('keluar') || 
                      lowerText.contains('qris') || 
                      lowerText.contains('bayar') ||
                      lowerText.contains('transfer ke') ||
-                     lowerText.contains('didebit');
+                     lowerText.contains('didebit') ||
+                     lowerText.contains('berhasil kirim');
 
     // If both match or neither match, we make a best guess.
     // Usually 'ke' vs 'dari' is a good indicator.
@@ -76,17 +101,20 @@ class NotificationService {
 
     final amount = _extractAmount(originalText);
     if (amount != null) {
+      String bankName = pkg == 'id.dana' ? 'DANA' : 'SeaBank';
       if (isIncome) {
         return TransactionModel(
-          title: 'SeaBank Masuk',
+          title: '$bankName Masuk',
           amount: amount,
           type: 'income',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(timestamp),
         );
       } else {
         return TransactionModel(
-          title: 'SeaBank Keluar / QRIS',
+          title: '$bankName Keluar / QRIS',
           amount: amount,
           type: 'expense',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(timestamp),
         );
       }
     }

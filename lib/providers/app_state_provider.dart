@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
 import '../models/transaction.dart';
 import '../repositories/transaction_repository.dart';
+import '../services/notification_service.dart';
 import 'dart:async';
 
 class AppStateProvider extends ChangeNotifier with WidgetsBindingObserver {
@@ -26,26 +27,35 @@ class AppStateProvider extends ChangeNotifier with WidgetsBindingObserver {
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      // Force refresh when app comes back to foreground
-      fetchTransactions();
+      // Force refresh from DB and fetch active notifications when app comes back to foreground
+      fetchTransactions().then((_) {
+        fetchActiveNotifications();
+      });
     }
   }
 
   void _initRealtimeTransactions() {
-    // 1. Fetch immediately
-    fetchTransactions();
-    
-    // 2. Fallback polling
-    _pollingTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
-      fetchTransactions();
+    // 1. Fetch immediately from DB
+    fetchTransactions().then((_) {
+      // 2. Fetch active notifications from OS drawer to catch missed ones
+      fetchActiveNotifications();
     });
 
     // 3. True Supabase Realtime Stream (if replication is enabled)
-    _realtimeSubscription = _repository.getTransactionsStream().listen((data) {
-      transactions = data;
-      _calculateTotals();
-      notifyListeners();
-    });
+    try {
+      _realtimeSubscription = _repository.getTransactionsStream().listen(
+        (data) {
+          transactions = data;
+          _calculateTotals();
+          notifyListeners();
+        },
+        onError: (error) {
+          debugPrint('Realtime Stream Error (probably not enabled in dashboard): $error');
+        },
+      );
+    } catch (e) {
+      debugPrint('Failed to initialize Realtime Stream: $e');
+    }
   }
 
   Future<void> fetchTransactions() async {
@@ -57,6 +67,31 @@ class AppStateProvider extends ChangeNotifier with WidgetsBindingObserver {
       notifyListeners();
     } catch (e) {
       debugPrint('Polling error: $e');
+    }
+  }
+
+  Future<void> fetchActiveNotifications() async {
+    if (!isNotificationAccessGranted) return;
+    
+    try {
+      final events = await NotificationListenerService.getActiveNotifications();
+      bool hasNew = false;
+      
+      for (var event in events) {
+        final success = await NotificationService.processNotification(event, (logMsg) {
+          addLog(logMsg);
+        }, transactions);
+        
+        if (success) {
+          hasNew = true;
+        }
+      }
+      
+      if (hasNew) {
+        await fetchTransactions(); // Refresh the UI with new data
+      }
+    } catch (e) {
+      debugPrint('Error fetching active notifications: $e');
     }
   }
 

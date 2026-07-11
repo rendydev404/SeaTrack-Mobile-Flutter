@@ -5,6 +5,7 @@ import 'providers/app_state_provider.dart';
 import 'screens/home_screen.dart';
 import 'services/supabase_service.dart';
 import 'services/notification_service.dart';
+import 'services/local_notification_service.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
@@ -12,6 +13,7 @@ void main() async {
   
   await dotenv.load(fileName: ".env");
   await SupabaseService.initialize();
+  await LocalNotificationService.initialize();
 
   runApp(
     MultiProvider(
@@ -38,14 +40,24 @@ class _SeaTrackAppState extends State<SeaTrackApp> {
   }
 
   void _startListening() async {
-    final isGranted = await NotificationListenerService.isPermissionGranted();
+    bool isGranted = await NotificationListenerService.isPermissionGranted();
+    if (!isGranted) {
+      debugPrint("Requesting notification listener permission...");
+      isGranted = await NotificationListenerService.requestPermission();
+    }
+    
     if (isGranted) {
+      debugPrint("Notification permission granted, listening to stream...");
       NotificationListenerService.notificationsStream.listen((event) async {
         if (!mounted) return;
         final provider = Provider.of<AppStateProvider>(context, listen: false);
-        final success = await NotificationService.processNotification(event, (logMsg) {
-          provider.addLog(logMsg);
-        });
+        final success = await NotificationService.processNotification(
+          event, 
+          (logMsg) {
+            provider.addLog(logMsg);
+          },
+          provider.transactions, // Pass existing transactions for deduplication
+        );
         if (success && mounted) {
           provider.fetchTransactions();
         }
