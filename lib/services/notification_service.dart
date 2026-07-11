@@ -16,8 +16,12 @@ class NotificationService {
       // Log all notifications for debugging
       onLog('DEBUG: pkg=$pkg, title=${event.title}');
       
-      if (pkg != 'id.co.bankbkemobile.digitalbank' && pkg != 'id.dana' && pkg != 'test.simulation') {
-        return false; // Ignore non-seabank/dana apps
+      if (pkg != 'id.co.bankbkemobile.digitalbank' && 
+          pkg != 'id.dana' && 
+          !pkg.contains('gopay') && 
+          !pkg.contains('gojek') && 
+          pkg != 'test.simulation') {
+        return false; // Ignore non-seabank/dana/gopay apps
       }
 
       final title = event.title ?? '';
@@ -82,7 +86,9 @@ class NotificationService {
                      lowerText.contains('bayar') ||
                      lowerText.contains('transfer ke') ||
                      lowerText.contains('didebit') ||
-                     lowerText.contains('berhasil kirim');
+                     lowerText.contains('berhasil kirim') ||
+                     lowerText.contains('dipakai') ||
+                     lowerText.contains('berhasil bayar');
 
     // If both match or neither match, we make a best guess.
     // Usually 'ke' vs 'dari' is a good indicator.
@@ -101,7 +107,12 @@ class NotificationService {
 
     final amount = _extractAmount(originalText);
     if (amount != null) {
-      String bankName = pkg == 'id.dana' ? 'DANA' : 'SeaBank';
+      String bankName = 'SeaBank';
+      if (pkg == 'id.dana') {
+        bankName = 'DANA';
+      } else if (pkg.contains('gopay') || pkg.contains('gojek')) {
+        bankName = 'GoPay';
+      }
       if (isIncome) {
         return TransactionModel(
           title: '$bankName Masuk',
