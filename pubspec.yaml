@@ -15,6 +15,8 @@ dependencies:
   notification_listener_service: any
   provider: ^6.1.2
   flutter_dotenv: ^6.0.1
+  fl_chart: ^1.2.0
+  intl: ^0.20.3
 
 dev_dependencies:
   flutter_test:

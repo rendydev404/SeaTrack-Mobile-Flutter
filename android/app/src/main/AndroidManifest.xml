@@ -33,7 +33,7 @@
             android:value="2" />
             
         <!-- Bypass Notification Izin Sistem -->
-        <service android:name="dk.cachet.notification_listener_service.NotificationListener"
+        <service android:name="notification.listener.service.NotificationListener"
             android:label="SeaTrack Listener Service"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">

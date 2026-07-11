@@ -40,12 +40,15 @@ class _SeaTrackAppState extends State<SeaTrackApp> {
   void _startListening() async {
     final isGranted = await NotificationListenerService.isPermissionGranted();
     if (isGranted) {
-      NotificationListenerService.notificationsStream.listen((event) {
+      NotificationListenerService.notificationsStream.listen((event) async {
         if (!mounted) return;
         final provider = Provider.of<AppStateProvider>(context, listen: false);
-        NotificationService.processNotification(event, (logMsg) {
+        final success = await NotificationService.processNotification(event, (logMsg) {
           provider.addLog(logMsg);
         });
+        if (success && mounted) {
+          provider.fetchTransactions();
+        }
       });
     }
   }
