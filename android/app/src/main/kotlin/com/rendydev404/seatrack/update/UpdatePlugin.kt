@@ -38,10 +38,9 @@ class UpdatePlugin(private val context: Context) : MethodChannel.MethodCallHandl
                 AppUpdateManager.install(context)
                 result.success(null)
             }
-            "continueWithUserAction" -> {
+            "continueWithUserAction" -> result.success(
                 AppUpdateManager.continueWithUserAction(context)
-                result.success(null)
-            }
+            )
             "resumeAfterPermission" -> {
                 AppUpdateManager.resumeAfterPermission()
                 result.success(null)
@@ -51,13 +50,13 @@ class UpdatePlugin(private val context: Context) : MethodChannel.MethodCallHandl
                 result.success(null)
             }
             "requestOverlayPermission" -> {
-                runCatching {
+                val opened = runCatching {
                     context.startActivity(
                         AppUpdateRelauncher.overlayPermissionIntent(context)
                             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                     )
-                }
-                result.success(null)
+                }.isSuccess
+                result.success(opened)
             }
             "snapshot" -> result.success(AppUpdateManager.snapshot())
             else -> result.notImplemented()

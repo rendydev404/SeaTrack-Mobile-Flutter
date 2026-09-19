@@ -65,8 +65,10 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> checkNow() => UpdateService.check(force: true);
   Future<void> install() => UpdateService.install();
-  Future<void> grantAndInstall() => UpdateService.continueWithUserAction();
-  Future<void> requestRelaunchPermission() =>
+
+  /// `false` bila layar pengaturan sistem tidak bisa dibuka.
+  Future<bool> grantAndInstall() => UpdateService.continueWithUserAction();
+  Future<bool> requestRelaunchPermission() =>
       UpdateService.requestOverlayPermission();
 
   Future<void> dismissInstalledNotice() async {

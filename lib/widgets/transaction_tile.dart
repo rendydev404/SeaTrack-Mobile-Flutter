@@ -6,10 +6,17 @@ import '../models/transaction.dart';
 import 'source_avatar.dart';
 
 class TransactionTile extends StatelessWidget {
-  const TransactionTile({super.key, required this.tx, this.onTap, this.showDate = false});
+  const TransactionTile({
+    super.key,
+    required this.tx,
+    this.onTap,
+    this.onLongPress,
+    this.showDate = false,
+  });
 
   final TransactionModel tx;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final bool showDate;
 
   @override
@@ -19,6 +26,7 @@ class TransactionTile extends StatelessWidget {
     final subtitle = showDate ? Fmt.full(tx.createdAt) : Fmt.time(tx.createdAt);
     return InkWell(
       onTap: onTap,
+      onLongPress: onLongPress,
       borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),

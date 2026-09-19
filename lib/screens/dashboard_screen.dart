@@ -23,11 +23,18 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with AutomaticKeepAliveClientMixin {
   bool _monthOnly = true;
+
+  /// Tetap hidup saat digeser ke halaman lain, supaya posisi gulir dan pilihan
+  /// periode tidak ikut hilang.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final scheme = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: () async {

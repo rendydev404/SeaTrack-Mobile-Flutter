@@ -5,6 +5,25 @@ import '../core/theme.dart';
 import '../providers/update_controller.dart';
 import '../services/update_service.dart';
 
+/// Membuka layar izin pasang milik Android. Sebagian ROM menyembunyikan layar
+/// itu, jadi kegagalannya disampaikan sebagai saran pengaturan manual.
+Future<void> grantInstallPermission(
+  BuildContext context,
+  UpdateController controller,
+) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final opened = await controller.grantAndInstall();
+  if (opened) return;
+  messenger.showSnackBar(
+    const SnackBar(
+      duration: Duration(seconds: 6),
+      content: Text(
+        'Buka Pengaturan Android, Aplikasi, SeaTrack, lalu aktifkan "Pasang aplikasi tidak dikenal".',
+      ),
+    ),
+  );
+}
+
 /// Pita status pembaruan di dashboard. Menghilang sendiri saat tidak ada apa-apa,
 /// karena seluruh alur berjalan otomatis di latar belakang.
 class UpdateBanner extends StatelessWidget {
@@ -81,7 +100,7 @@ class UpdateBanner extends StatelessWidget {
               minimumSize: const Size(0, 38),
               padding: const EdgeInsets.symmetric(horizontal: 16),
             ),
-            onPressed: c.grantAndInstall,
+            onPressed: () => grantInstallPermission(context, c),
             child: const Text('Izinkan'),
           ),
         ),

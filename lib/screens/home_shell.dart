@@ -13,36 +13,83 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
+  final _pager = PageController();
   int _index = 0;
+
+  /// Seberapa dekat halaman Pengaturan, 0 sampai 1. Dipakai untuk menyembunyikan
+  /// tombol catat secara bertahap saat jari masih menggeser, bukan mengejutkan
+  /// pengguna dengan hilang mendadak begitu halaman berganti.
+  double _settingsProximity = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _pager.addListener(_onScroll);
+  }
+
+  void _onScroll() {
+    if (!_pager.hasClients || _pager.position.hasPixels == false) return;
+    final page = _pager.page ?? _index.toDouble();
+    final next = (page - 1).clamp(0.0, 1.0);
+    if ((next - _settingsProximity).abs() > 0.01) {
+      setState(() => _settingsProximity = next);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pager.removeListener(_onScroll);
+    _pager.dispose();
+    super.dispose();
+  }
+
+  void _goTo(int i) {
+    if (i == _index) return;
+    _pager.animateToPage(
+      i,
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final fabScale = 1 - _settingsProximity;
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
+      // PageView, bukan IndexedStack: halaman bisa digeser dengan jari dan
+      // halaman tetangga ikut bergerak mengikuti jari selagi digeser.
+      body: PageView(
+        controller: _pager,
+        onPageChanged: (i) => setState(() => _index = i),
         children: [
-          DashboardScreen(onViewAll: () => setState(() => _index = 1)),
+          DashboardScreen(onViewAll: () => _goTo(1)),
           const TransactionsScreen(),
           const SettingsScreen(),
         ],
       ),
-      floatingActionButton: _index == 2
+      floatingActionButton: fabScale <= 0.01
           ? null
-          : FloatingActionButton.extended(
-              onPressed: () async {
-                final saved = await showTransactionForm(context);
-                if (saved == true && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Transaksi tersimpan')),
-                  );
-                }
-              },
-              icon: const Icon(Icons.add_rounded),
-              label: const Text('Catat'),
+          : Transform.scale(
+              scale: fabScale,
+              child: Opacity(
+                opacity: fabScale.clamp(0.0, 1.0),
+                child: FloatingActionButton.extended(
+                  onPressed: () async {
+                    final saved = await showTransactionForm(context);
+                    if (saved == true && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Transaksi tersimpan')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.add_rounded),
+                  label: const Text('Catat'),
+                ),
+              ),
             ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: _goTo,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.dashboard_outlined),

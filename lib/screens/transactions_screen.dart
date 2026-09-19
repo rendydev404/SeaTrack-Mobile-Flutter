@@ -17,11 +17,17 @@ class TransactionsScreen extends StatefulWidget {
   State<TransactionsScreen> createState() => _TransactionsScreenState();
 }
 
-class _TransactionsScreenState extends State<TransactionsScreen> {
+class _TransactionsScreenState extends State<TransactionsScreen>
+    with AutomaticKeepAliveClientMixin {
   final _search = TextEditingController();
   TxType? _type;
   TxSource? _source;
   String _query = '';
+
+  /// Tetap hidup saat digeser ke halaman lain, supaya kata kunci pencarian dan
+  /// filter tidak hilang begitu pengguna mengintip halaman sebelah.
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void dispose() {
@@ -43,6 +49,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final scheme = Theme.of(context).colorScheme;
     final all = context.select<TransactionProvider, List<TransactionModel>>((p) => p.items);
     final loading = context.select<TransactionProvider, bool>((p) => p.loading && p.isEmpty);
@@ -138,8 +145,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 itemBuilder: (context, i) {
                   final row = rows[i];
                   if (row is _Header) return _DayHeader(row: row);
-                  final tx = (row as _Item).tx;
-                  return _SwipeableTile(tx: tx, first: row.first, last: row.last);
+                  final item = row as _Item;
+                  return _GroupedTile(tx: item.tx, first: item.first, last: item.last);
                 },
               ),
             ),
@@ -252,48 +259,47 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-class _SwipeableTile extends StatelessWidget {
-  const _SwipeableTile({required this.tx, required this.first, required this.last});
+/// Baris transaksi di dalam kelompok harian.
+///
+/// Tidak memakai geser-untuk-hapus: gerakan mendatar di daftar ini sudah
+/// dipakai untuk berpindah halaman. Hapus cepat lewat tekan-tahan, atau lewat
+/// lembar detail setelah diketuk.
+class _GroupedTile extends StatelessWidget {
+  const _GroupedTile({required this.tx, required this.first, required this.last});
   final TransactionModel tx;
   final bool first;
   final bool last;
 
+  Future<void> _delete(BuildContext context) async {
+    final provider = context.read<TransactionProvider>();
+    final messenger = ScaffoldMessenger.of(context);
+    if (!await confirmDelete(context)) return;
+    try {
+      await provider.remove(tx);
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Gagal menghapus. Coba lagi.')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final radius = BorderRadius.vertical(
-      top: Radius.circular(first ? 18 : 0),
-      bottom: Radius.circular(last ? 18 : 0),
-    );
     return ClipRRect(
-      borderRadius: radius,
-      child: Dismissible(
-        key: ValueKey(tx.id ?? tx.hashCode),
-        direction: DismissDirection.endToStart,
-        confirmDismiss: (_) async {
-          final provider = context.read<TransactionProvider>();
-          final messenger = ScaffoldMessenger.of(context);
-          if (!await confirmDelete(context)) return false;
-          try {
-            await provider.remove(tx);
-            return true;
-          } catch (_) {
-            messenger.showSnackBar(const SnackBar(content: Text('Gagal menghapus. Coba lagi.')));
-            return false;
-          }
-        },
-        background: Container(
-          color: AppColors.expense,
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 24),
-          child: const Icon(Icons.delete_outline_rounded, color: Colors.white),
+      borderRadius: BorderRadius.vertical(
+        top: Radius.circular(first ? 18 : 0),
+        bottom: Radius.circular(last ? 18 : 0),
+      ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: scheme.surface,
+          border: last
+              ? null
+              : Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4))),
         ),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            border: last ? null : Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4))),
-          ),
-          child: TransactionTile(tx: tx, onTap: () => showTransactionDetail(context, tx)),
+        child: TransactionTile(
+          tx: tx,
+          onTap: () => showTransactionDetail(context, tx),
+          onLongPress: () => _delete(context),
         ),
       ),
     );

@@ -10,6 +10,7 @@ import '../providers/transaction_provider.dart';
 import '../providers/update_controller.dart';
 import '../services/database_service.dart';
 import '../services/update_service.dart';
+import '../widgets/update_banner.dart';
 import 'activity_log_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -210,7 +211,10 @@ class _UpdateGroup extends StatelessWidget {
       UpdateState.installing => ('Memasang versi $version…', null),
       UpdateState.needsPermission => (
           'Butuh izin memasang aplikasi',
-          TextButton(onPressed: c.grantAndInstall, child: const Text('Izinkan')),
+          TextButton(
+            onPressed: () => grantInstallPermission(context, c),
+            child: const Text('Izinkan'),
+          ),
         ),
       UpdateState.failed => (
           c.status.error ?? 'Pembaruan gagal',
@@ -253,7 +257,15 @@ class _UpdateGroup extends StatelessWidget {
           ),
           isThreeLine: true,
           trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: c.requestRelaunchPermission,
+          onTap: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            if (await c.requestRelaunchPermission()) return;
+            messenger.showSnackBar(
+              const SnackBar(
+                content: Text('Layar izin tidak tersedia di perangkat ini.'),
+              ),
+            );
+          },
         ),
       ],
     );

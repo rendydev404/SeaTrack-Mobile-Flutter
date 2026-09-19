@@ -142,15 +142,15 @@ class UpdateService {
 
   static Future<void> install() => _call('install');
 
-  static Future<void> continueWithUserAction() =>
-      _call('continueWithUserAction');
+  /// `false` bila layar pengaturan sistem tidak bisa dibuka.
+  static Future<bool> continueWithUserAction() => _callBool('continueWithUserAction');
 
   static Future<void> resumeAfterPermission() => _call('resumeAfterPermission');
 
   static Future<void> acknowledgeInstall() => _call('acknowledgeInstall');
 
-  static Future<void> requestOverlayPermission() =>
-      _call('requestOverlayPermission');
+  static Future<bool> requestOverlayPermission() =>
+      _callBool('requestOverlayPermission');
 
   static Future<UpdateStatus?> _invoke(
     String method, [
@@ -164,6 +164,17 @@ class UpdateService {
       return null;
     } on MissingPluginException {
       return null;
+    }
+  }
+
+  static Future<bool> _callBool(String method) async {
+    if (!supported) return false;
+    try {
+      return await _method.invokeMethod<bool>(method) ?? false;
+    } on PlatformException {
+      return false;
+    } on MissingPluginException {
+      return false;
     }
   }
 

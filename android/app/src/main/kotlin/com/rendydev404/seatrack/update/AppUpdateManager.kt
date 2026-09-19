@@ -516,8 +516,7 @@ object AppUpdateManager {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         AppUpdateRelauncher.markPending(ctx)
-        runCatching { ctx.startActivity(intent) }
-            .onFailure { fail("Tidak bisa membuka installer sistem") }
+        if (!startActivitySafely(ctx, intent)) fail("Tidak bisa membuka installer sistem")
     }
 
     /** Dipanggil [UpdateInstallResultReceiver] saat sesi PackageInstaller melapor. */
@@ -547,19 +546,31 @@ object AppUpdateManager {
         }
     }
 
-    /** Melanjutkan setelah pengguna memberi izin, atau membuka dialog konfirmasi sistem. */
-    fun continueWithUserAction(context: Context) {
+    /**
+     * Melanjutkan setelah pengguna memberi izin, atau membuka dialog konfirmasi
+     * sistem. Mengembalikan `false` bila layar sistem tidak bisa dibuka, supaya
+     * UI bisa menyarankan pengaturan manual tanpa mengubah status pembaruan.
+     */
+    fun continueWithUserAction(context: Context): Boolean {
         val ctx = context.applicationContext
-        pendingUserAction?.let {
-            it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            runCatching { ctx.startActivity(it) }
-            return
-        }
+        pendingUserAction?.let { return startActivitySafely(ctx, it) }
         if (!canRequestInstall(ctx)) {
-            runCatching { ctx.startActivity(installPermissionIntent(ctx)) }
-            return
+            return startActivitySafely(ctx, installPermissionIntent(ctx))
         }
         install(ctx)
+        return true
+    }
+
+    /**
+     * Semua intent di kelas ini diluncurkan dari context aplikasi, bukan Activity.
+     * Tanpa FLAG_ACTIVITY_NEW_TASK, Android melempar AndroidRuntimeException dan
+     * layar yang dituju tidak pernah terbuka.
+     */
+    private fun startActivitySafely(ctx: Context, intent: Intent): Boolean {
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return runCatching { ctx.startActivity(intent) }
+            .onFailure { Log.e(TAG, "Tidak bisa membuka layar sistem", it) }
+            .isSuccess
     }
 
     fun canRequestInstall(ctx: Context): Boolean =
