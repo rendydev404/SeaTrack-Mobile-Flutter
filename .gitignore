@@ -44,4 +44,8 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
-.env
+
+# Kunci penandatanganan rilis
+android/key.properties
+*.jks
+*.keystore

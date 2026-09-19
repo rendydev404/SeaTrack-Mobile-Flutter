@@ -1,83 +1,59 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
-import 'package:notification_listener_service/notification_listener_service.dart';
-import 'providers/app_state_provider.dart';
-import 'screens/home_screen.dart';
-import 'services/supabase_service.dart';
-import 'services/notification_service.dart';
-import 'services/local_notification_service.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() async {
+import 'core/theme.dart';
+import 'providers/activity_log.dart';
+import 'providers/listener_controller.dart';
+import 'providers/transaction_provider.dart';
+import 'providers/update_controller.dart';
+import 'repositories/transaction_repository.dart';
+import 'screens/home_shell.dart';
+import 'services/database_service.dart';
+
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  await dotenv.load(fileName: ".env");
-  await SupabaseService.initialize();
-  await LocalNotificationService.initialize();
-
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AppStateProvider()),
-      ],
-      child: const SeaTrackApp(),
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      systemNavigationBarColor: Colors.transparent,
     ),
   );
+  await Future.wait([
+    initializeDateFormatting('id_ID'),
+    DatabaseService.open(),
+  ]);
+  runApp(const SeaTrackApp());
 }
 
-class SeaTrackApp extends StatefulWidget {
+class SeaTrackApp extends StatelessWidget {
   const SeaTrackApp({super.key});
 
   @override
-  State<SeaTrackApp> createState() => _SeaTrackAppState();
-}
-
-class _SeaTrackAppState extends State<SeaTrackApp> {
-  @override
-  void initState() {
-    super.initState();
-    _startListening();
-  }
-
-  void _startListening() async {
-    bool isGranted = await NotificationListenerService.isPermissionGranted();
-    if (!isGranted) {
-      debugPrint("Requesting notification listener permission...");
-      isGranted = await NotificationListenerService.requestPermission();
-    }
-    
-    if (isGranted) {
-      debugPrint("Notification permission granted, listening to stream...");
-      NotificationListenerService.notificationsStream.listen((event) async {
-        if (!mounted) return;
-        final provider = Provider.of<AppStateProvider>(context, listen: false);
-        final success = await NotificationService.processNotification(
-          event, 
-          (logMsg) {
-            provider.addLog(logMsg);
-          },
-          provider.transactions, // Pass existing transactions for deduplication
-        );
-        if (success && mounted) {
-          provider.fetchTransactions();
-        }
-      });
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SeaTrack',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.indigo,
-          primary: Colors.indigo,
-          secondary: Colors.deepPurple,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ActivityLog()),
+        ChangeNotifierProvider(
+          create: (_) => TransactionProvider(const TransactionRepository())..refresh(),
         ),
-        useMaterial3: true,
+        ChangeNotifierProvider(
+          create: (ctx) => ListenerController(
+            ctx.read<TransactionProvider>(),
+            ctx.read<ActivityLog>(),
+          )..init(),
+        ),
+        ChangeNotifierProvider(create: (_) => UpdateController()..init()),
+      ],
+      child: MaterialApp(
+        title: 'SeaTrack',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.light(),
+        darkTheme: AppTheme.dark(),
+        themeMode: ThemeMode.system,
+        home: const HomeShell(),
       ),
-      home: const HomeScreen(),
     );
   }
 }

@@ -1,9 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.rendydev404.seatrack">
-    
+
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Distribusi mandiri (bukan Play Store): aplikasi memasang sendiri APK
+         pembaruan yang diunduhnya. Lihat AppUpdateManager. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Android 12+: memasang pembaruan untuk dirinya sendiri tanpa dialog konfirmasi. -->
+    <uses-permission android:name="android.permission.UPDATE_PACKAGES_WITHOUT_USER_ACTION" />
+    <!-- Opsional, dipakai AppUpdateRelauncher untuk membuka kembali aplikasi
+         setelah pembaruan terpasang. Aplikasi tetap berjalan tanpa izin ini. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:label="SeaTrack"
@@ -17,12 +26,12 @@
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
-            
+
             <meta-data
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
-              
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
@@ -32,7 +41,7 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-            
+
         <!-- Bypass Notification Izin Sistem -->
         <service android:name="notification.listener.service.NotificationListener"
             android:label="SeaTrack Listener Service"
@@ -42,5 +51,32 @@
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
         </service>
+
+        <!-- Menyerahkan APK pembaruan ke installer sistem pada Android 11 ke bawah. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- Status sesi PackageInstaller. exported="false": hanya PendingIntent
+             milik aplikasi ini yang memicunya. -->
+        <receiver
+            android:name="com.rendydev404.seatrack.update.UpdateInstallResultReceiver"
+            android:exported="false" />
+
+        <!-- Membuka kembali aplikasi setelah APK baru terpasang. Siaran sistem
+             tetap sampai walau exported="false". -->
+        <receiver
+            android:name="com.rendydev404.seatrack.update.AppUpdateRelaunchReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

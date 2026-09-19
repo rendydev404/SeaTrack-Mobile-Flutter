@@ -1,0 +1,192 @@
+name: Rilis
+
+# Setiap dorongan ke main menghasilkan satu rilis baru: APK utuh, patch delta
+# dari beberapa versi sebelumnya, dan update.json yang dibaca aplikasi.
+#
+# Aplikasi membaca manifest dari URL tetap milik GitHub:
+#   https://github.com/<owner>/<repo>/releases/latest/download/update.json
+# yang selalu mengarah ke rilis terbaru, jadi tidak ada berkas yang perlu
+# dikembalikan ke repositori dan tidak ada risiko CI memicu dirinya sendiri.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rilis
+  cancel-in-progress: false
+
+env:
+  PATCHER_VERSION: 3.0.0
+  # Berapa versi ke belakang yang dibuatkan patch.
+  DELTA_DEPTH: 3
+
+jobs:
+  rilis:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Jumlah commit dipakai sebagai versionCode, jadi riwayat penuh wajib.
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Tentukan versi
+        id: versi
+        run: |
+          set -euo pipefail
+          CODE=$(git rev-list --count HEAD)
+          NAME=$(sed -n 's/^version: *\([^+]*\).*/\1/p' pubspec.yaml | head -1)
+          echo "code=$CODE"  >> "$GITHUB_OUTPUT"
+          echo "name=$NAME"  >> "$GITHUB_OUTPUT"
+          echo "tag=v$CODE"  >> "$GITHUB_OUTPUT"
+          echo "Versi $NAME ($CODE)"
+
+      - name: Lewati bila rilis sudah ada
+        id: guard
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.versi.outputs.tag }}" >/dev/null 2>&1; then
+            echo "ada=true" >> "$GITHUB_OUTPUT"
+            echo "Rilis ${{ steps.versi.outputs.tag }} sudah ada, berhenti."
+          else
+            echo "ada=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ambil dependensi
+        if: steps.guard.outputs.ada == 'false'
+        run: flutter pub get
+
+      - name: Analisis dan tes
+        if: steps.guard.outputs.ada == 'false'
+        run: |
+          flutter analyze
+          flutter test
+
+      - name: Siapkan keystore
+        if: steps.guard.outputs.ada == 'false'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.SEATRACK_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Secret SEATRACK_KEYSTORE_BASE64 belum diisi." \
+                 "Tanpa kunci tetap, pembaruan tidak bisa terpasang di perangkat."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/seatrack.jks"
+
+      - name: Build APK
+        if: steps.guard.outputs.ada == 'false'
+        env:
+          SEATRACK_KEYSTORE: ${{ runner.temp }}/seatrack.jks
+          SEATRACK_KEYSTORE_PASSWORD: ${{ secrets.SEATRACK_KEYSTORE_PASSWORD }}
+          SEATRACK_KEY_ALIAS: ${{ secrets.SEATRACK_KEY_ALIAS }}
+          SEATRACK_KEY_PASSWORD: ${{ secrets.SEATRACK_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          # APK universal, bukan split-per-ABI: patch delta dibuat terhadap satu
+          # berkas dasar yang pasti sama dengan yang terpasang di perangkat.
+          flutter build apk --release \
+            --build-number="${{ steps.versi.outputs.code }}" \
+            --build-name="${{ steps.versi.outputs.name }}" \
+            --dart-define=SEATRACK_UPDATE_URL="https://github.com/${{ github.repository }}/releases/latest/download/update.json"
+          cp build/app/outputs/flutter-apk/app-release.apk \
+             "dist/seatrack-${{ steps.versi.outputs.code }}.apk"
+
+      - name: Buat patch delta
+        if: steps.guard.outputs.ada == 'false'
+        id: delta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.versi.outputs.code }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -o patcher.jar \
+            "https://repo1.maven.org/maven2/com/eidu/archive-patcher/${PATCHER_VERSION}/archive-patcher-${PATCHER_VERSION}.jar"
+
+          mkdir -p prev
+          BASES=$(gh release list --limit 30 --json tagName -q '.[].tagName' \
+                  | grep -E '^v[0-9]+$' | sed 's/^v//' | sort -rn | head -n "$DELTA_DEPTH" || true)
+
+          for BASE in $BASES; do
+            [ "$BASE" -lt "$CODE" ] || continue
+            if ! gh release download "v$BASE" -p "seatrack-$BASE.apk" -D prev 2>/dev/null; then
+              echo "Lewati v$BASE: APK dasar tidak tersedia."
+              continue
+            fi
+            java -cp patcher.jar tools/DeltaGen.java \
+              "prev/seatrack-$BASE.apk" \
+              "dist/seatrack-$CODE.apk" \
+              "dist/seatrack-$BASE-to-$CODE.patch" || {
+                echo "Gagal membuat patch dari v$BASE, dilewati."
+                rm -f "dist/seatrack-$BASE-to-$CODE.patch"
+              }
+          done
+          rm -rf prev patcher.jar
+          ls -l dist
+
+      - name: Susun update.json
+        if: steps.guard.outputs.ada == 'false'
+        env:
+          CODE: ${{ steps.versi.outputs.code }}
+          NAME: ${{ steps.versi.outputs.name }}
+          TAG: ${{ steps.versi.outputs.tag }}
+          BASE_URL: https://github.com/${{ github.repository }}/releases/download
+        run: |
+          set -euo pipefail
+          APK="dist/seatrack-$CODE.apk"
+          DELTAS="[]"
+          for PATCH in dist/seatrack-*-to-"$CODE".patch; do
+            [ -e "$PATCH" ] || continue
+            BASE=$(basename "$PATCH" | sed -E "s/^seatrack-([0-9]+)-to-$CODE\.patch$/\1/")
+            DELTAS=$(jq -c \
+              --argjson base "$BASE" \
+              --arg url "$BASE_URL/$TAG/$(basename "$PATCH")" \
+              --arg sha "$(sha256sum "$PATCH" | cut -d' ' -f1)" \
+              --argjson size "$(stat -c%s "$PATCH")" \
+              '. + [{base_version_code:$base, patch_url:$url, patch_sha256:$sha, patch_size_bytes:$size}]' \
+              <<< "$DELTAS")
+          done
+
+          jq -n \
+            --argjson code "$CODE" \
+            --arg name "$NAME" \
+            --arg url "$BASE_URL/$TAG/$(basename "$APK")" \
+            --arg sha "$(sha256sum "$APK" | cut -d' ' -f1)" \
+            --argjson size "$(stat -c%s "$APK")" \
+            --arg notes "$(git log -1 --pretty=%s)" \
+            --argjson deltas "$DELTAS" \
+            '{version_code:$code, version_name:$name, apk_url:$url, apk_sha256:$sha,
+              apk_size_bytes:$size, deltas:$deltas, notes:$notes, mandatory:false}' \
+            > dist/update.json
+          cat dist/update.json
+
+      - name: Terbitkan rilis
+        if: steps.guard.outputs.ada == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "${{ steps.versi.outputs.tag }}" dist/* \
+            --title "SeaTrack ${{ steps.versi.outputs.name }} (${{ steps.versi.outputs.code }})" \
+            --notes "$(git log -1 --pretty=%B)" \
+            --latest
