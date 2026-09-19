@@ -84,6 +84,46 @@ void main() {
     });
   });
 
+  group('notifikasi asli dari perangkat', () {
+    // Ditangkap lewat `dumpsys notification` pada 2026-09-19. SeaBank menulis
+    // nominal tanpa "Rp" dan tanpa pemisah ribuan, sehingga pola lama yang
+    // mensyaratkan salah satunya tidak pernah cocok.
+    test('QRIS SeaBank, nominal polos setelah kata "sebesar"', () {
+      final tx = parse(
+        seabank,
+        'Pembayaran QRIS berhasil',
+        'Pembayaran QRIS untuk PT SUKA PROFIT BERKAH sebesar 2 telah berhasil.',
+      );
+      expect(tx, isNotNull);
+      expect(tx!.amount, 2);
+      expect(tx.type, TxType.expense);
+      expect(tx.source, TxSource.seabank);
+      // Nama merchant lebih berguna daripada label "Pembayaran QRIS".
+      expect(tx.description, 'Ke PT SUKA PROFIT BERKAH');
+    });
+
+    test('nominal polos yang besar juga terbaca', () {
+      expect(
+        NotificationParser.extractAmount('sebesar 150000 telah berhasil'),
+        150000,
+      );
+      expect(
+        NotificationParser.extractAmount('senilai 25.000 telah berhasil'),
+        25000,
+      );
+      expect(
+        NotificationParser.extractAmount('sejumlah Rp 75.000'),
+        75000,
+      );
+    });
+
+    test('angka polos tanpa kata nominal tetap diabaikan', () {
+      // Tanpa jangkar, nomor referensi atau tanggal akan tercatat sebagai uang.
+      expect(NotificationParser.extractAmount('Transaksi ref 12 selesai'), isNull);
+      expect(parse(seabank, 'Info', 'Transaksi ke 3 hari ini selesai'), isNull);
+    });
+  });
+
   group('parse DANA dan GoPay', () {
     test('DANA terima uang', () {
       final tx = parse(dana, 'DANA', 'Kamu menerima Rp50.000 dari RINA');

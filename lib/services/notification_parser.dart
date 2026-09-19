@@ -83,10 +83,21 @@ class NotificationParser {
     r'(?:Rp|IDR)\s?\.?\s?([0-9][0-9.,]*[0-9]|[0-9])',
     caseSensitive: false,
   );
+
+  /// Nominal yang ditulis setelah kata jumlah, tanpa "Rp" dan tanpa pemisah
+  /// ribuan. SeaBank memakai bentuk ini, contoh "sebesar 2 telah berhasil".
+  /// Kata jumlah menjadi jangkarnya supaya nomor referensi tidak ikut terbaca.
+  static final RegExp _labeledAmountRe = RegExp(
+    r'\b(?:sebesar|senilai|sejumlah)\s+(?:Rp|IDR)?\s*\.?\s*([0-9][0-9.,]*)',
+    caseSensitive: false,
+  );
+
   static final RegExp _fallbackAmountRe =
       RegExp(r'(?<![0-9])([0-9]{1,3}(?:\.[0-9]{3})+)(?![0-9])');
+  /// "untuk" ikut dihitung karena SeaBank menyebut merchant QRIS dengan kata
+  /// itu, contoh "Pembayaran QRIS untuk PT SUKA PROFIT BERKAH".
   static final RegExp _counterpartyRe = RegExp(
-    r'\b(dari|ke|kepada)\s+([^\n]+?)(?=\s+(?:sebesar|senilai|sejumlah|rp|idr|pada|tanggal|berhasil|telah|sudah)\b|[.,!]|$)',
+    r'\b(dari|ke|kepada|untuk)\s+([^\n]+?)(?=\s+(?:sebesar|senilai|sejumlah|rp|idr|pada|tanggal|berhasil|telah|sudah)\b|[.,!]|$)',
     caseSensitive: false,
   );
 
@@ -149,9 +160,13 @@ class NotificationParser {
   }
 
   /// Mengubah "50.000", "50.000,00", "50,000", "50,000.00", "50000" ke angka.
+  ///
+  /// Urutannya dari yang paling meyakinkan: nominal berprefix "Rp", lalu
+  /// nominal setelah kata jumlah, baru angka berpemisah ribuan.
   static double? extractAmount(String text) {
-    var m = _amountRe.firstMatch(text);
-    var raw = m?.group(1) ?? _fallbackAmountRe.firstMatch(text)?.group(1);
+    var raw = _amountRe.firstMatch(text)?.group(1) ??
+        _labeledAmountRe.firstMatch(text)?.group(1) ??
+        _fallbackAmountRe.firstMatch(text)?.group(1);
     if (raw == null) return null;
     raw = raw.replaceAll(RegExp(r'[^0-9.,]'), '');
     if (raw.isEmpty) return null;
@@ -172,7 +187,8 @@ class NotificationParser {
   }
 
   static String _describe(String text, TxType type) {
-    // Lawan transaksi: "dari X" untuk pemasukan, "ke X" untuk pengeluaran.
+    // Lawan transaksi: "dari X" untuk pemasukan, "ke X" atau "untuk X" untuk
+    // pengeluaran. Arah yang tidak sesuai jenis transaksi dilewati.
     for (final m in _counterpartyRe.allMatches(text)) {
       final isDari = m.group(1)!.toLowerCase() == 'dari';
       if (isDari != (type == TxType.income)) continue;

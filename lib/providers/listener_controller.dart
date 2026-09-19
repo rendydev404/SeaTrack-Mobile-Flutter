@@ -2,12 +2,12 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/widgets.dart';
-import 'package:notification_listener_service/notification_event.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
 
 import '../core/formatters.dart';
 import '../core/sources.dart';
 import '../services/battery_service.dart';
+import '../services/notification_bridge.dart';
 import '../services/notification_parser.dart';
 import 'activity_log.dart';
 import 'transaction_provider.dart';
@@ -19,7 +19,7 @@ class ListenerController extends ChangeNotifier with WidgetsBindingObserver {
   final TransactionProvider _tx;
   final ActivityLog _log;
 
-  StreamSubscription<ServiceNotificationEvent>? _sub;
+  StreamSubscription<NotifEvent>? _sub;
   final Set<int> _seen = {};
   Future<void> _queue = Future.value();
 
@@ -84,7 +84,9 @@ class ListenerController extends ChangeNotifier with WidgetsBindingObserver {
 
   void _startStream() {
     if (!Platform.isAndroid || _sub != null) return;
-    _sub = NotificationListenerService.notificationsStream.listen(
+    _sub = NotificationListenerService.notificationsStream
+        .map(NotifEvent.fromService)
+        .listen(
       _enqueue,
       onError: (Object e) => _log.error('Stream notifikasi error: $e'),
     );
@@ -97,8 +99,7 @@ class ListenerController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> sweepActive() async {
     if (!_notifGranted || !Platform.isAndroid) return;
     try {
-      final events = await NotificationListenerService.getActiveNotifications();
-      for (final e in events) {
+      for (final e in await NotificationBridge.activeNotifications()) {
         _enqueue(e);
       }
     } catch (e) {
@@ -108,13 +109,13 @@ class ListenerController extends ChangeNotifier with WidgetsBindingObserver {
 
   /// Pemrosesan diserialkan agar event yang sama dari stream dan sweep tidak
   /// masuk ganda ke database.
-  void _enqueue(ServiceNotificationEvent e) {
+  void _enqueue(NotifEvent e) {
     _queue = _queue.then((_) => _handle(e)).catchError((Object err) {
       _log.error('Gagal memproses notifikasi: $err');
     });
   }
 
-  Future<void> _handle(ServiceNotificationEvent e) async {
+  Future<void> _handle(NotifEvent e) async {
     if (e.hasRemoved || e.onGoing) return;
     final source = TxSource.fromPackage(e.packageName);
     if (source == null) return;
@@ -131,7 +132,9 @@ class ListenerController extends ChangeNotifier with WidgetsBindingObserver {
       timestampMs: e.timestamp,
     );
     if (parsed == null) {
-      _log.info('${source.label}: bukan transaksi, diabaikan');
+      // Teks ikut dicatat: tanpa ini, notifikasi yang formatnya belum dikenali
+      // hanya tampak sebagai "diabaikan" dan tidak bisa ditelusuri dari HP.
+      _log.warn('${source.label} diabaikan · ${_preview(e.title, e.content)}');
       return;
     }
     if (await _tx.existsAt(parsed.createdAt)) {
@@ -154,6 +157,13 @@ class ListenerController extends ChangeNotifier with WidgetsBindingObserver {
   static String _short(Object e) {
     final s = e.toString();
     return s.length > 80 ? '${s.substring(0, 77)}…' : s;
+  }
+
+  /// Ringkasan isi notifikasi untuk log, dipangkas agar satu baris tetap terbaca.
+  static String _preview(String title, String content) {
+    final text = [title, content].where((s) => s.trim().isNotEmpty).join(' — ');
+    if (text.isEmpty) return '(tanpa teks)';
+    return text.length > 110 ? '${text.substring(0, 107)}…' : text;
   }
 
   @override
